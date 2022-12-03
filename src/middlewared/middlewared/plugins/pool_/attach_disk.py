@@ -96,4 +96,4 @@ class PoolService(Service):
         enc_disks = [{'disk': options['new_disk'], 'devname': f'{new_devname.removeprefix("/dev/")}'}]
         disk = await self.middleware.call('disk.query', [['devname', '=', options['new_disk']]], {'get': True})
         await self.middleware.call('pool.save_encrypteddisks', oid, enc_disks, {disk['devname']: disk})
-        asyncio.ensure_future(self.middleware.call('disk.swaps_configure'))
+        self.middleware.create_task(self.middleware.call('disk.swaps_configure'))

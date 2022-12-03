@@ -38,7 +38,7 @@ class DiskService(PseudoServiceBase):
 
         # FIXME: Linux
 
-        asyncio.ensure_future(self.middleware.call("service.restart", "collectd"))
+        self.middleware.create_task(self.middleware.call("service.restart", "collectd"))
 
 
 class FailoverService(PseudoServiceBase):
@@ -211,10 +211,10 @@ class SystemService(PseudoServiceBase):
     restartable = True
 
     async def stop(self):
-        asyncio.ensure_future(self.middleware.call("system.shutdown", {"delay": 3}))
+        self.middleware.create_task(self.middleware.call("system.shutdown", {"delay": 3}))
 
     async def restart(self):
-        asyncio.ensure_future(self.middleware.call("system.reboot", {"delay": 3}))
+        self.middleware.create_task(self.middleware.call("system.reboot", {"delay": 3}))
 
 
 class SystemDatasetsService(PseudoServiceBase):
@@ -238,7 +238,7 @@ class SystemDatasetsService(PseudoServiceBase):
         # benefit in waiting for it, since even if it fails it will not
         # tell the user anything useful.
         # Restarting rrdcached will make sure that we start/restart collectd as well
-        asyncio.ensure_future(self.middleware.call("service.restart", "rrdcached"))
+        self.middleware.create_task(self.middleware.call("service.restart", "rrdcached"))
 
 
 class TimeservicesService(PseudoServiceBase):

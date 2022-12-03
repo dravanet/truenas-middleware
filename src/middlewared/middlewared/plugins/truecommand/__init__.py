@@ -24,4 +24,4 @@ async def setup(middleware):
     middleware.event_subscribe('system', _event_system)
     if await middleware.call('system.ready'):
         if not await middleware.call('failover.licensed'):
-            asyncio.ensure_future(middleware.call('truecommand.start_truecommand_service'))
+            middleware.create_task(middleware.call('truecommand.start_truecommand_service'))
