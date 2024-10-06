@@ -11,6 +11,7 @@ from middlewared.schema import Bool, Dict, Int, IPAddr, List, Patch, Str, accept
 from middlewared.service import CallError, CRUDService, ValidationErrors, private
 from middlewared.utils import UnexpectedFailure, run
 from .utils import AUTHMETHOD_LEGACY_MAP
+from .utils import SCSTSysfsHandler
 
 RE_TARGET_NAME = re.compile(r'^[-a-z0-9\.:]+$')
 
@@ -133,15 +134,20 @@ class iSCSITargetService(CRUDService):
             await self.middleware.call('datastore.delete', self._config.datastore, pk)
             raise e
 
+        instance = await self.get_instance(pk)
+
         # First process the local (MASTER) config
-        await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
+        try:
+            await SCSTSysfsHandler(self.middleware).create_target(instance)
+        except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+            await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
 
         # Then process the remote (BACKUP) config if we are HA and ALUA is enabled.
         if await self.middleware.call("iscsi.global.alua_enabled") and await self.middleware.call('failover.remote_connected'):
             await self.middleware.call('failover.call_remote', 'service.reload', ['iscsitarget'])
             await self.middleware.call('iscsi.alua.wait_for_alua_settled')
 
-        return await self.get_instance(pk)
+        return instance
 
     async def __save_groups(self, pk, new, old=None):
         """
@@ -368,8 +374,11 @@ class iSCSITargetService(CRUDService):
             await self.middleware.call('failover.call_remote', 'iscsi.target.logout_ha_target', [target["name"]])
             await self.middleware.call('iscsi.alua.wait_for_alua_settled')
 
-        await self.middleware.call('iscsi.target.remove_target', target["name"])
-        await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
+        try:
+            await SCSTSysfsHandler(self.middleware).delete_target(target)
+        except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+            await self.middleware.call('iscsi.target.remove_target', target["name"])
+            await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
 
         # Attempt to cleanup initiators as the wizard may have created a single-use one
         try:

@@ -68,7 +68,9 @@ class iSCSITargetAuthCredentialService(CRUDService):
             {'prefix': self._config.datastore_prefix}
         )
 
-        await self._service_change('iscsitarget', 'reload')
+        usages = await self.is_in_use_by_portals_targets(data['id'])
+        if usages['in_use']:
+            await self._service_change('iscsitarget', 'reload')
 
         return await self.get_instance(data['id'])
 
@@ -94,9 +96,11 @@ class iSCSITargetAuthCredentialService(CRUDService):
 
         verrors = ValidationErrors()
         await self.validate(new, 'iscsi_auth_update', verrors)
-        if new['tag'] != old['tag'] and not await self.query([['tag', '=', old['tag']], ['id', '!=', id_]]):
+        in_use = False
+        if new['tag'] != old['tag']:
             usages = await self.is_in_use_by_portals_targets(id_)
-            if usages['in_use']:
+            in_use = usages['in_use']
+            if in_use:
                 verrors.add('iscsi_auth_update.tag', usages['usages'])
 
         verrors.check()
@@ -106,7 +110,8 @@ class iSCSITargetAuthCredentialService(CRUDService):
             {'prefix': self._config.datastore_prefix}
         )
 
-        await self._service_change('iscsitarget', 'reload')
+        if in_use:
+            await self._service_change('iscsitarget', 'reload')
 
         return await self.get_instance(id_)
 
@@ -120,7 +125,7 @@ class iSCSITargetAuthCredentialService(CRUDService):
         config = await self.get_instance(id_)
         audit_callback(_auth_summary(config))
 
-        if not await self.query([['tag', '=', config['tag']], ['id', '!=', id_]]):
+        if await self.query([['tag', '=', config['tag']]]):
             usages = await self.is_in_use_by_portals_targets(id_)
             if usages['in_use']:
                 raise CallError(usages['usages'])

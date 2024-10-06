@@ -3,6 +3,7 @@ import asyncio
 import middlewared.sqlalchemy as sa
 from middlewared.schema import Bool, Dict, Int, Patch, accepts
 from middlewared.service import CallError, CRUDService, ValidationErrors, private
+from .utils import SCSTSysfsHandler
 
 
 class iSCSITargetToExtentModel(sa.Model):
@@ -58,8 +59,15 @@ class iSCSITargetToExtentService(CRUDService):
             'datastore.insert', self._config.datastore, data,
             {'prefix': self._config.datastore_prefix}
         )
+        created = False
+        try:
+            await SCSTSysfsHandler(self.middleware).create_target_to_extent(data)
+            created = True
+        except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+            pass
+        if not created:
+            await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
 
-        await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
         if await self.middleware.call("iscsi.global.alua_enabled") and await self.middleware.call('failover.remote_connected'):
             await self.middleware.call('failover.call_remote', 'service.reload', ['iscsitarget'])
             await self.middleware.call('iscsi.alua.wait_cluster_mode', data['target'], data['extent'])
@@ -178,6 +186,14 @@ class iSCSITargetToExtentService(CRUDService):
                     # Better to continue than to raise the exception
                 await self.middleware.call('failover.call_remote', 'service.reload', ['iscsitarget'])
             await self.middleware.call('iscsi.alua.wait_for_alua_settled')
+        deleted = False
+        try:
+            await SCSTSysfsHandler(self.middleware).delete_target_to_extent(associated_target)
+            deleted = True
+        except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+            pass
+        if not deleted:
+            await self._service_change('iscsitarget', 'reload', options={'ha_propagate': False})
 
         return result
 

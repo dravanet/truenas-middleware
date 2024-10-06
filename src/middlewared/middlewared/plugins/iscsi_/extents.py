@@ -16,6 +16,7 @@ from middlewared.validators import Range
 from collections import defaultdict
 
 from .utils import MAX_EXTENT_NAME_LEN
+from .utils import SCSTSysfsHandler
 
 
 class iSCSITargetExtentModel(sa.Model):
@@ -121,7 +122,14 @@ class iSCSITargetExtentService(SharingService):
             {'prefix': self._config.datastore_prefix}
         )
 
-        return await self.get_instance(data['id'])
+        instance = await self.get_instance(data['id'])
+
+        try:
+            await SCSTSysfsHandler(self.middleware).create_extent(instance)
+        except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+            await self._service_change('iscsitarget', 'reload')
+
+        return instance
 
     @accepts(
         Int('id'),
@@ -214,7 +222,11 @@ class iSCSITargetExtentService(SharingService):
                 'datastore.delete', self._config.datastore, id_
             )
         finally:
-            await self._service_change('iscsitarget', 'reload')
+            try:
+                await SCSTSysfsHandler(self.middleware).delete_extent(data)
+            except:  # noqa: E722 in case of any error, do a legacy iscsitarget reload
+                await self._service_change('iscsitarget', 'reload')
+
             if await self.middleware.call("iscsi.global.alua_enabled") and await self.middleware.call('failover.remote_connected'):
                 await self.middleware.call('iscsi.alua.wait_for_alua_settled')
 
