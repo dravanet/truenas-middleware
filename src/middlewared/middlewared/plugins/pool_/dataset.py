@@ -983,11 +983,7 @@ class PoolDatasetService(CRUDService):
 
         dataset = await self.get_instance(id_)
         audit_callback(dataset['name'])
-        if mountpoint := dataset_mountpoint(dataset):
-            for delegate in await self.middleware.call('pool.dataset.get_attachment_delegates'):
-                attachments = await delegate.query(mountpoint, True)
-                if attachments:
-                    await delegate.delete(attachments)
+        mountpoint = dataset_mountpoint(dataset)
 
         if dataset['locked'] and mountpoint and os.path.exists(mountpoint):
             # We would like to remove the immutable flag in this case so that it's mountpoint can be
