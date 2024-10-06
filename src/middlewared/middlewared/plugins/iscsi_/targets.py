@@ -114,10 +114,19 @@ class iSCSITargetService(CRUDService):
 
         await self.compress(data)
         groups = data.pop('groups')
-        data['rel_tgt_id'] = await self.middleware.call('iscsi.target.get_rel_tgt_id')
-        pk = await self.middleware.call(
-            'datastore.insert', self._config.datastore, data,
-            {'prefix': self._config.datastore_prefix})
+
+        data['rel_tgt_id'] = await self.get_rel_tgt_id()
+        try:
+            pk = await self.middleware.call(
+                'datastore.insert', self._config.datastore, data,
+                {'prefix': self._config.datastore_prefix})
+        except:
+            await self.clear_rel_tgt_id_cache()
+            data['rel_tgt_id'] = await self.get_rel_tgt_id()
+            pk = await self.middleware.call(
+                'datastore.insert', self._config.datastore, data,
+                {'prefix': self._config.datastore_prefix})
+
         try:
             await self.__save_groups(pk, groups)
         except Exception as e:
@@ -372,6 +381,7 @@ class iSCSITargetService(CRUDService):
                     await self.middleware.call('iscsi.initiator.delete', initiator)
         except Exception:
             self.logger.error('Failed to clean up target initiators for %r', target['name'], exc_info=True)
+        await self.put_rel_tgt_id(target['rel_tgt_id'])
         return rv
 
     @private
@@ -390,11 +400,21 @@ class iSCSITargetService(CRUDService):
 
     @private
     async def get_rel_tgt_id(self):
-        existing = {target['rel_tgt_id'] for target in await self.middleware.call(f'{self._config.namespace}.query', [], {'select': ['rel_tgt_id']})}
-        for i in range(1, 32000):
-            if i not in existing:
-                return i
+        if not getattr(self, 'rel_tgt_id_cache', None):
+            self.rel_tgt_id_cache = set(range(1, 32000)) - {target['rel_tgt_id'] for target in await self.middleware.call(f'{self._config.namespace}.query', [], {'select': ['rel_tgt_id']})}
+        if self.rel_tgt_id_cache:
+            return self.rel_tgt_id_cache.pop()
         raise ValueError("Unable to deletmine rel_tgt_id")
+
+    @private
+    async def put_rel_tgt_id(self, id_):
+        if getattr(self, 'rel_tgt_id_cache', None) is None:
+            self.rel_tgt_id_cache = set(range(1, 32000)) - {target['rel_tgt_id'] for target in await self.middleware.call(f'{self._config.namespace}.query', [], {'select': ['rel_tgt_id']})}
+        self.rel_tgt_id_cache.add(id_)
+
+    @private
+    async def clear_rel_tgt_id_cache(self):
+        self.rel_tgt_id_cache = None
 
     @private
     async def active_sessions_for_targets(self, target_id_list):
